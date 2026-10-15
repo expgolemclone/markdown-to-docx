@@ -1,0 +1,17 @@
+{
+  "name": "markdown-to-docx-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "check": "envx-node tsc --noEmit",
+    "test": "envx-node run --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "typescript": "7.0.2"
+  }
+}
