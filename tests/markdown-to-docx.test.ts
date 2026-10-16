@@ -547,19 +547,18 @@ test("renderDocx uses independent heading sizes inherited by inline formatting",
   assert.doesNotMatch(stylesXml, /w:styleId="Heading[56]"/);
 });
 
-test("renderDocx uses body size for all nine list depths and markers", () => {
-  const bulletLines = Array.from({ length: 9 }, (_value, level) =>
-    `${"  ".repeat(level)}- bullet-level-${level + 1}`);
-  const orderedLines = Array.from({ length: 9 }, (_value, level) =>
-    `${"  ".repeat(level)}1. ordered-level-${level + 1}`);
-  bulletLines[2] += " with [link](https://example.test), `code`, *italic*, and ~~strike~~";
-  bulletLines[3] += " with **explicit-bold**";
-  bulletLines[0] += " with `top-code`";
-  bulletLines[1] += " with [top-link](https://example.test)";
+test("renderDocx inherits regular body typography at all nine list depths", () => {
+  const listLines = (kind: string, marker: string): string[] =>
+    Array.from({ length: 9 }, (_value, level) =>
+      `${"  ".repeat(level)}${marker} ${kind}-level-${level + 1} with **${kind}-bold-${level + 1}**`);
+  const bulletLines = listLines("bullet", "-");
+  bulletLines[2] += " and [link](https://example.test), `code`, *italic*, and ~~strike~~";
+  bulletLines[0] += " and `top-code`";
+  bulletLines[1] += " and [top-link](https://example.test)";
   const buffer = renderDocx(parseMarkdown([
     ...bulletLines,
     "",
-    ...orderedLines,
+    ...listLines("ordered", "1."),
     "",
     "- [x] completed-task",
     "- [ ] open-task",
@@ -570,29 +569,26 @@ test("renderDocx uses body size for all nine list depths and markers", () => {
   assertTypography(wordStyleXml(stylesXml, "Normal"), 21, false);
 
   for (let level = 0; level < 9; level += 1) {
-    const bold = level < 2;
     for (const kind of ["bullet", "ordered"]) {
-      const text = `${kind}-level-${level + 1}${kind === "bullet" && level < 4 ? " with " : ""}`;
+      const text = `${kind}-level-${level + 1} with `;
       const paragraph = paragraphXmlContaining(documentXml, text);
-      assertTypography(runXmlContaining(paragraph, text), 21, bold);
+      const plainRun = runXmlContaining(paragraph, text);
+      assert.doesNotMatch(plainRun, /<w:b\b|<w:sz(?:Cs)?\b/);
+      const boldRun = runXmlContaining(paragraph, `${kind}-bold-${level + 1}`);
+      assert.match(boldRun, /<w:b\/>/);
+      assert.doesNotMatch(boldRun, /<w:sz(?:Cs)?\b/);
     }
     for (const abstractId of [0, 1]) {
       assertTypography(numberingLevelXml(
         abstractNumberingXml(numberingXml, abstractId), level,
-      ), 21, bold);
+      ), 21, false);
     }
   }
 
-  const styledParagraph = paragraphXmlContaining(documentXml, "link");
-  for (const text of ["link", "code", "italic", "strike"]) {
-    assertTypography(runXmlContaining(styledParagraph, text), 21, false);
-  }
-  for (const text of ["top-code", "top-link", "☑ completed-task", "☐ open-task"]) {
+  for (const text of ["link", "code", "italic", "strike", "top-code", "top-link", "☑ completed-task", "☐ open-task"]) {
     const paragraph = paragraphXmlContaining(documentXml, text);
-    assertTypography(runXmlContaining(paragraph, text), 21, true);
+    assert.doesNotMatch(runXmlContaining(paragraph, text), /<w:b\b|<w:sz(?:Cs)?\b/);
   }
-  const explicitBoldParagraph = paragraphXmlContaining(documentXml, "explicit-bold");
-  assertTypography(runXmlContaining(explicitBoldParagraph, "explicit-bold"), 21, true);
 });
 
 test("renderDocx preserves body, table, quote, and code sizes through style inheritance", () => {
@@ -650,14 +646,74 @@ test("renderDocx preserves body, table, quote, and code sizes through style inhe
   }
 });
 
+test("renderDocx composes emphasis with code, links and surrounding styles", () => {
+  const content = "**before `nested-code` *nested-italic* ~~nested-strike~~ [nested-link](https://example.test) after** normal";
+  for (const markdown of [
+    content,
+    `# ${content}`,
+    `> ${content}`,
+    `- ${content}`,
+    `- parent\n  - ${content}`,
+    `| ${content} | Other |\n| --- | --- |\n| Body | Cell |`,
+    `| Header | Other |\n| --- | --- |\n| ${content} | Cell |`,
+    `<table><tr><th>${content}</th></tr><tr><td>Body</td></tr></table>`,
+    `<table><tr><td>${content}</td></tr></table>`,
+  ]) {
+    const buffer = renderDocx(parseMarkdown(markdown), process.cwd());
+    const xml = zipXml(buffer, "word/document.xml");
+    const paragraph = paragraphXmlContaining(xml, "nested-code");
+    for (const text of ["before ", "nested-code", "nested-italic", "nested-strike", "nested-link", " after"]) {
+      const run = runXmlContaining(paragraph, text);
+      assert.match(run, /<w:b\/>/);
+      assert.doesNotMatch(run, /<w:sz(?:Cs)?\b/);
+    }
+    assert.match(runXmlContaining(paragraph, "nested-code"), /w:ascii="Consolas"/);
+    assert.match(runXmlContaining(paragraph, "nested-italic"), /<w:i\/>/);
+    assert.match(runXmlContaining(paragraph, "nested-strike"), /<w:strike\/>/);
+    assert.match(paragraph, /<w:hyperlink\b[^>]*><w:r>.*?>nested-link<\/w:t><\/w:r><\/w:hyperlink>/);
+    if (!markdown.includes("<th>") && !markdown.startsWith(`| ${content}`)) {
+      assert.doesNotMatch(runXmlContaining(paragraph, " normal"), /<w:b\/>/);
+    }
+    assert.doesNotMatch(xml, /\*\*|~~|`nested-code`/);
+  }
+});
+
+test("renderDocx retains bold link labels, combined emphasis and literal delimiters", () => {
+  const buffer = renderDocx(parseMarkdown([
+    "[**bold-link** and *italic-link*](https://example.test)",
+    "",
+    "**[outer-bold-link](#target)**",
+    "",
+    "***both*** and ~~**bold-strike**~~",
+    "",
+    "\\*\\*literal\\*\\* and `**code-literal**`",
+  ].join("\n")), process.cwd());
+  const xml = zipXml(buffer, "word/document.xml");
+  for (const text of ["bold-link", "outer-bold-link", "both", "bold-strike"]) {
+    const paragraph = paragraphXmlContaining(xml, text);
+    assert.match(runXmlContaining(paragraph, text), /<w:b\/>/);
+  }
+  assert.match(runXmlContaining(paragraphXmlContaining(xml, "both"), "both"), /<w:i\/>/);
+  assert.match(runXmlContaining(paragraphXmlContaining(xml, "bold-strike"), "bold-strike"), /<w:strike\/>/);
+  const linkParagraph = paragraphXmlContaining(xml, "bold-link");
+  assert.match(linkParagraph, /<w:hyperlink\b/);
+  assert.match(runXmlContaining(linkParagraph, "italic-link"), /<w:i\/>/);
+  assert.match(xml, /<w:hyperlink w:anchor="target"/);
+  assert.ok(xml.includes(">**literal** and </w:t>"));
+  assert.ok(xml.includes(">**code-literal**</w:t>"));
+});
+
 test("renderer rejects unsupported link protocols and inline images", () => {
   assert.throws(
     () => renderDocx(parseMarkdown("[local](relative.html)"), process.cwd()),
     /absolute URLs/,
   );
+  for (const text of ["Text ![image](image.png) inline", "**![image](image.png)**", "[![image](image.png)](https://example.test)"]) {
+    assert.throws(() => renderDocx(parseMarkdown(text), process.cwd()), /standalone paragraphs/);
+  }
   assert.throws(
-    () => renderDocx(parseMarkdown("Text ![image](image.png) inline"), process.cwd()),
-    /standalone paragraphs/,
+    () => renderDocx(parseMarkdown("**[unsafe](javascript:alert)**"), process.cwd()),
+    /Unsupported link protocol/,
   );
 });
 
@@ -1023,6 +1079,28 @@ test("PNG validation failure rolls back imported images before modifying Markdow
     assert.deepEqual(readFileSync(output), original);
     assert.equal(readFileSync(input, "utf8"), markdown);
     assert.equal(existsSync(path.join(directory, "images")), false);
+  }));
+
+test("nested emphasis produces matching anchors for DOCX image synchronization", () =>
+  withTempDirectory((directory) => {
+    const input = path.join(directory, "report.md");
+    const output = path.join(directory, "report.docx");
+    writeFileSync(path.join(directory, "seed.png"), ONE_PIXEL_PNG);
+    const before = "**Before `code` and [*太字リンク*](https://example.test)**";
+    const after = "After ***combined*** and ~~**strike**~~";
+    writeFileSync(input, `${before}\n\n![Pasted](seed.png)\n\n${after}`);
+    synchronizeMarkdownToDocx(input, output);
+    writeFileSync(input, `${before}\n\n${after}`);
+    const result = synchronizeMarkdownToDocx(input, output);
+    assert.equal(result.importedImagePaths.length, 1);
+    const updated = readFileSync(input, "utf8");
+    assert.ok(updated.startsWith(before));
+    assert.ok(updated.endsWith(after));
+    assert.match(updated, /!\[Pasted\]\(images\/[a-f0-9]{64}\.png\)/);
+    assert.equal(zipXml(readFileSync(output), "word/document.xml").match(/<w:drawing>/g)?.length, 1);
+    assert.deepEqual(synchronizeMarkdownToDocx(input, output), {
+      importedImagePaths: [], markdownChanged: false,
+    });
   }));
 
 test("existing DOCX-only images are extracted beside Markdown and restored in place", () =>

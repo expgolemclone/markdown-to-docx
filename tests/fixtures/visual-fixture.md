@@ -8,8 +8,8 @@
 
 #### Fourth-level heading
 
-- Top-level bullet
-  - Second-level bullet with a long sentence that wraps under the item text instead of the marker.
+- Top-level bullet with **explicit emphasis**.
+  - Second-level bullet with a long sentence that wraps under the item text instead of the marker, and **one important phrase**.
     - [x] Third-level completed task with an [external link](https://example.com)
       - Fourth-level bullet with `inline code`, *italic*, and ~~strikethrough~~.
         - Fifth-level bullet with **explicit bold** at the body size.
@@ -38,6 +38,8 @@
   8. Child eight
 
 Literal code must retain backslashes: `a\*b`, `C:\temp\file`, and ``a`b\*c``.
+
+通常の日本語と **太字の日本語**, **太字の中の `code` と *斜体* と [リンク](https://example.com)**. [**太字リンク**](https://example.com) and ***bold italic***.
 
 > A blockquote must keep a visible left border and readable spacing.
 

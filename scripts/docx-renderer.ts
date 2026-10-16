@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pythonExecutable } from "@expgolemclone/envx-runtime";
 
-import { tokenizeInlineMarkdown } from "./inline-markdown.ts";
+import { tokenizeInlineMarkdown, type InlineMarkdownToken } from "./inline-markdown.ts";
 import { resolveMarkdownImagePath } from "./image-path.ts";
 import type {
   HeadingLevel,
@@ -57,7 +57,6 @@ type RunStyle = {
   color?: string;
   sizeHalfPoints?: number;
 };
-type ListTypography = Required<Pick<RunStyle, "bold" | "sizeHalfPoints">>;
 type RenderState = {
   bookmarkId: number;
   drawingId: number;
@@ -189,13 +188,11 @@ function textRun(text: string, props = ""): string {
     .join("")}</w:r>`;
 }
 
-function hyperlinkRun(
-  label: string,
+function hyperlinkXml(
+  run: string,
   target: string,
   state: RenderState,
-  style: RunStyle = {},
 ): string {
-  const run = textRun(label, runProps({ ...style, hyperlink: true }));
   if (target.startsWith("#")) {
     const anchor = target.slice(1);
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(anchor)) {
@@ -217,43 +214,35 @@ function hyperlinkRun(
   return `<w:hyperlink r:id="${id}" w:history="1">${run}</w:hyperlink>`;
 }
 
-function inlineXml(text: string, state: RenderState, defaultStyle: RunStyle = {}): string {
-  const inlineRunProps = (style: RunStyle = {}): string =>
-    runProps({
-      ...defaultStyle,
-      ...style,
-      bold: defaultStyle.bold === true || style.bold === true,
-    });
-  const runs: string[] = [];
-  for (const token of tokenizeInlineMarkdown(text)) {
-    if (token.kind === "image") {
-      throw new SyntaxError("Markdown images must be standalone paragraphs.");
-    }
-    if (token.kind === "link") {
-      runs.push(
-        hyperlinkRun(
-          token.text,
+function inlineTokensXml(
+  tokens: readonly InlineMarkdownToken[],
+  state: RenderState,
+  style: RunStyle,
+): string {
+  return tokens.map((token) => {
+    switch (token.kind) {
+      case "image":
+        throw new SyntaxError("Markdown images must be standalone paragraphs.");
+      case "link":
+        return hyperlinkXml(
+          inlineTokensXml(token.children, state, { ...style, hyperlink: true }),
           token.target,
           state,
-          {
-            ...defaultStyle,
-            bold: defaultStyle.bold === true,
-          },
-        ),
-      );
-    } else if (token.kind === "code") {
-      runs.push(textRun(token.text, inlineRunProps({ code: true })));
-    } else if (token.kind === "bold") {
-      runs.push(textRun(token.text, inlineRunProps({ bold: true })));
-    } else if (token.kind === "strike") {
-      runs.push(textRun(token.text, inlineRunProps({ strike: true })));
-    } else if (token.kind === "italic") {
-      runs.push(textRun(token.text, inlineRunProps({ italic: true })));
-    } else {
-      runs.push(textRun(token.text, inlineRunProps()));
+        );
+      case "bold":
+      case "italic":
+      case "strike":
+        return inlineTokensXml(token.children, state, { ...style, [token.kind]: true });
+      case "code":
+        return textRun(token.text, runProps({ ...style, code: true }));
+      case "text":
+        return textRun(token.text, runProps(style));
     }
-  }
-  return runs.join("");
+  }).join("");
+}
+
+function inlineXml(text: string, state: RenderState, style: RunStyle = {}): string {
+  return inlineTokensXml(tokenizeInlineMarkdown(text), state, style);
 }
 
 function tableCellXml(
@@ -422,10 +411,8 @@ function paragraphXml(block: MarkdownBlock, state: RenderState): string {
       if (block.bookmarkName) state.bookmarkId += 1;
       return `<w:p><w:pPr><w:pStyle w:val="Heading${block.level}"/></w:pPr>${start}${inlineXml(block.text, state)}${end}</w:p>`;
     }
-    case "list": {
-      const typography = listTypography(block.level);
-      return `<w:p><w:pPr><w:numPr><w:ilvl w:val="${block.level}"/><w:numId w:val="${block.listId}"/></w:numPr><w:spacing w:before="0" w:after="40" w:line="280" w:lineRule="auto"/></w:pPr>${inlineXml(block.text, state, typography)}</w:p>`;
-    }
+    case "list":
+      return `<w:p><w:pPr><w:numPr><w:ilvl w:val="${block.level}"/><w:numId w:val="${block.listId}"/></w:numPr><w:spacing w:before="0" w:after="40" w:line="280" w:lineRule="auto"/></w:pPr>${inlineXml(block.text, state)}</w:p>`;
     case "quote":
       return `<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr>${inlineXml(block.text, state)}</w:p>`;
     case "code":
@@ -435,15 +422,7 @@ function paragraphXml(block: MarkdownBlock, state: RenderState): string {
   }
 }
 
-function listTypography(level: ListLevel): ListTypography {
-  return {
-    bold: level < 2,
-    sizeHalfPoints: BODY_SIZE_HALF_POINTS,
-  };
-}
-
 function listLevelXml(level: ListLevel, kind: ListKind): string {
-  const typography = listTypography(level);
   const left = 720 + level * 360;
   const marker = ["•", "◦", "▪"][level % 3]!;
   const format = kind === "bullet" ? "bullet" : "decimal";
@@ -451,7 +430,7 @@ function listLevelXml(level: ListLevel, kind: ListKind): string {
   const font = kind === "bullet"
     ? '<w:rFonts w:ascii="Segoe UI Symbol" w:hAnsi="Segoe UI Symbol" w:hint="default"/>'
     : '<w:rFonts w:ascii="Segoe UI" w:hAnsi="Segoe UI" w:eastAsia="Yu Gothic UI"/>';
-  return `<w:lvl w:ilvl="${level}"><w:start w:val="1"/><w:numFmt w:val="${format}"/><w:lvlText w:val="${escapeAttr(levelText)}"/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="${left}"/></w:tabs><w:ind w:left="${left}" w:hanging="360"/></w:pPr><w:rPr>${font}<w:color w:val="${level === 0 ? ACCENT : level < 3 ? INK : MUTED}"/>${runPropertyElements(typography)}</w:rPr></w:lvl>`;
+  return `<w:lvl w:ilvl="${level}"><w:start w:val="1"/><w:numFmt w:val="${format}"/><w:lvlText w:val="${escapeAttr(levelText)}"/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="${left}"/></w:tabs><w:ind w:left="${left}" w:hanging="360"/></w:pPr><w:rPr>${font}<w:color w:val="${level === 0 ? ACCENT : level < 3 ? INK : MUTED}"/>${runPropertyElements({ sizeHalfPoints: BODY_SIZE_HALF_POINTS })}</w:rPr></w:lvl>`;
 }
 
 function numberingXml(definitions: ListDefinition[]): string {

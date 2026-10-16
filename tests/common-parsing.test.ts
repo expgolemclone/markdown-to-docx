@@ -22,19 +22,19 @@ test("inline Markdown has one token stream for rendering and plain text", () => 
 
   assert.deepEqual(tokens, [
     { kind: "text", text: "plain *literal* " },
-    { kind: "link", text: "link", target: "https://example.test/a)" },
+    { kind: "link", children: [{ kind: "text", text: "link" }], target: "https://example.test/a)" },
     { kind: "text", text: " " },
     { kind: "code", text: "code" },
     { kind: "text", text: " " },
-    { kind: "bold", text: "bold" },
+    { kind: "bold", children: [{ kind: "text", text: "bold" }] },
     { kind: "text", text: " " },
-    { kind: "bold", text: "strong" },
+    { kind: "bold", children: [{ kind: "text", text: "strong" }] },
     { kind: "text", text: " " },
-    { kind: "italic", text: "italic" },
+    { kind: "italic", children: [{ kind: "text", text: "italic" }] },
     { kind: "text", text: " " },
-    { kind: "italic", text: "em" },
+    { kind: "italic", children: [{ kind: "text", text: "em" }] },
     { kind: "text", text: " " },
-    { kind: "strike", text: "strike" },
+    { kind: "strike", children: [{ kind: "text", text: "strike" }] },
     { kind: "text", text: " " },
     { kind: "image", alt: "alt", target: "image.png" },
   ]);
@@ -56,6 +56,46 @@ test("inline code preserves literal backslashes and matching backtick delimiters
     assert.deepEqual(tokenizeInlineMarkdown(source!), [{ kind: "code", text }]);
   }
   assert.deepEqual(tokenizeInlineMarkdown("\\`literal\\`"), [{ kind: "text", text: "`literal`" }]);
+});
+
+test("inline Markdown preserves nested emphasis, code and link structure", () => {
+  const tokens = tokenizeInlineMarkdown("**before `code` *italic* ~~strike~~ [太字](https://example.test) after**");
+  assert.deepEqual(tokens, [{
+    kind: "bold",
+    children: [
+      { kind: "text", text: "before " },
+      { kind: "code", text: "code" },
+      { kind: "text", text: " " },
+      { kind: "italic", children: [{ kind: "text", text: "italic" }] },
+      { kind: "text", text: " " },
+      { kind: "strike", children: [{ kind: "text", text: "strike" }] },
+      { kind: "text", text: " " },
+      { kind: "link", children: [{ kind: "text", text: "太字" }], target: "https://example.test" },
+      { kind: "text", text: " after" },
+    ],
+  }]);
+  assert.equal(inlineMarkdownTokensPlainText(tokens), "before code italic strike 太字 after");
+
+  for (const source of [
+    "[**太字**](https://example.test)",
+    "**[太字](https://example.test)**",
+    "***太字***",
+    "~~**太字**~~",
+  ]) {
+    assert.equal(inlineMarkdownTokensPlainText(tokenizeInlineMarkdown(source)), "太字");
+  }
+});
+
+test("inline Markdown keeps literal delimiters, intraword underscores and HTML as text", () => {
+  for (const [source, expected] of [
+    ["snake__case__word", "snake__case__word"],
+    ["**unclosed", "**unclosed"],
+    ["\\*\\*literal\\*\\*", "**literal**"],
+    ["`**literal**`", "**literal**"],
+    ["**<tag>text</tag>**", "<tag>text</tag>"],
+  ]) {
+    assert.equal(inlineMarkdownTokensPlainText(tokenizeInlineMarkdown(source!)), expected);
+  }
 });
 
 test("table cell style parsing normalizes colors and borders", () => {
