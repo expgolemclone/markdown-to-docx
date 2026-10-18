@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { pythonExecutable } from '@expgolemclone/envx-runtime';
+import { pythonExecutable } from '../scripts/python.ts';
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -49,7 +49,7 @@ async function withTempDirectory(
 }
 
 function sizedPngFixture(width: number, height: number): Buffer {
-  const encoded = spawnSync(pythonExecutable(), ["-c", [
+  const encoded = spawnSync(pythonExecutable, ["-c", [
     "import io, sys",
     "from PIL import Image",
     "with Image.open(io.BytesIO(sys.stdin.buffer.read())) as image:",
@@ -106,7 +106,7 @@ function replaceDocxPngWithJpeg(docxPath: string): void {
     "        zout.writestr(name, data)",
     "os.replace(temporary, source)",
   ].join("\n");
-  const converted = spawnSync(pythonExecutable(), ["-c", script, docxPath], {
+  const converted = spawnSync(pythonExecutable, ["-c", script, docxPath], {
     encoding: "utf8",
     windowsHide: true,
   });
@@ -899,7 +899,7 @@ test("unsupported existing DOCX table drawings fail atomically", () =>
         "        zout.writestr(info, xml if info.filename == 'word/document.xml' else zin.read(info.filename))",
         "os.replace(source + '.tmp', source)",
       ].join("\n");
-      const changed = spawnSync(pythonExecutable(), ["-c", script, output], { input: modified, encoding: "utf8" });
+      const changed = spawnSync(pythonExecutable, ["-c", script, output], { input: modified, encoding: "utf8" });
       assert.equal(changed.status, 0, changed.stderr);
       const original = readFileSync(output);
       assert.throws(() => synchronizeMarkdownToDocx(input, output), /image-only cell with one inline image/);
@@ -1305,7 +1305,7 @@ test("black-box renderer returns compact JSON and one PNG path per page", { time
     const outputPath = path.join(localizedDirectory, "render.docx");
     synchronizeMarkdownToDocx(VISUAL_FIXTURE_PATH, outputPath);
 
-    const rendered = spawnSync(pythonExecutable(), [RENDER_CLI_PATH, outputPath], {
+    const rendered = spawnSync(pythonExecutable, [RENDER_CLI_PATH, outputPath], {
       cwd: SKILL_DIRECTORY,
       encoding: "utf8",
       timeout: 120_000,

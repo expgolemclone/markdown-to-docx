@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pythonExecutable } from "@expgolemclone/envx-runtime";
+import { pythonExecutable } from "./python.ts";
 
 import { tokenizeInlineMarkdown, type InlineMarkdownToken } from "./inline-markdown.ts";
 import { resolveMarkdownImagePath } from "./image-path.ts";
@@ -324,7 +324,7 @@ function tableXml(table: MarkdownTable, state: RenderState): string {
 }
 
 function parsePngSize(data: Buffer, sourcePath: string): { widthPx: number; heightPx: number } {
-  const inspected = spawnSync(pythonExecutable(), [fileURLToPath(new URL("./inspect-png.py", import.meta.url))], {
+  const inspected = spawnSync(pythonExecutable, [fileURLToPath(new URL("./inspect-png.py", import.meta.url))], {
     input: data,
     encoding: "utf8",
     maxBuffer: 1024 * 1024,

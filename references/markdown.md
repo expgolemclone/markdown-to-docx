@@ -2,7 +2,7 @@
 
 ## Authoring
 
-Use ordinary Markdown where possible; reserve HTML tables for merged cells or photo placement. Use the CLI's validation errors rather than maintaining a separate catalog of accepted syntax, formatting constants, or DOCX internals here. Runtime setup follows the envx repository's `RULES.md` and `runtimes/README.md`.
+Use ordinary Markdown where possible; reserve HTML tables for merged cells or photo placement. Use the CLI's validation errors rather than maintaining a separate catalog of accepted syntax, formatting constants, or DOCX internals here. Use this project's npm lock and `uv.lock`; ignored `node_modules` and `.venv` belong to the project.
 
 Keep images as local PNGs referenced relative to the Markdown file or by absolute path:
 

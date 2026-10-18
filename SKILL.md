@@ -12,8 +12,10 @@ Use the bundled CLIs, not manual document reconstruction.
 3. Run from this skill directory:
 
 ```powershell
-envx-node run scripts/markdown-to-docx.ts C:\path\input.md C:\path\output.docx
-envx-python scripts/render-docx.py C:\path\output.docx
+npm ci
+uv sync --locked
+node scripts/markdown-to-docx.ts C:\path\input.md C:\path\output.docx
+uv run --locked python scripts/render-docx.py C:\path\output.docx
 ```
 
 Existing output DOCX files are inspected first: missing body images are imported into Markdown before regeneration. Declared table-photo cells are verified and regenerated from Markdown; unknown DOCX-only table photos are rejected. Markdown text remains authoritative. Ambiguous or unsupported imports fail without changing the source or existing DOCX.

@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pythonExecutable } from "@expgolemclone/envx-runtime";
+import { pythonExecutable } from "./python.ts";
 
 import { resolveMarkdownImagePath } from "./image-path.ts";
 import {
@@ -122,7 +122,7 @@ function parseExtractorResult(stdout: string, stagingDirectory: string): Extract
 }
 
 function extractDocxRecords(docxPath: string, stagingDirectory: string): ExtractorResult {
-  const extracted = spawnSync(pythonExecutable(), [EXTRACTOR_PATH, docxPath, stagingDirectory], {
+  const extracted = spawnSync(pythonExecutable, [EXTRACTOR_PATH, docxPath, stagingDirectory], {
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
     timeout: 120_000,

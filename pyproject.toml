@@ -1,0 +1,8 @@
+[project]
+name = "markdown-to-docx"
+version = "1.0.0"
+requires-python = ">=3.14,<3.15"
+dependencies = ["pillow==12.3.0", "pymupdf==1.28.2"]
+
+[tool.uv]
+package = false
