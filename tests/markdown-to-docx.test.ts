@@ -184,13 +184,14 @@ test("library-generated DOCX preserves formatting, table headers, lists and lite
   assert.ok(elements(numbering, "start").some((node) => node.getAttributeNS(W, "val") === "3"));
 }));
 
-test("document design uses editable typography and restrained table formatting", () => withTempDirectory(async (directory) => {
+test("document design uses editable typography, one accent and open tables", () => withTempDirectory(async (directory) => {
   const input = path.join(directory, "input.md");
   const output = path.join(directory, "output.docx");
   writeFileSync(input, [
     "# 文書タイトル", "", "通常の日本語と English, **強調** と [link](https://example.test).", "",
     "## Section", "", "### Detail", "", "#### Fourth", "", "##### Fifth", "", "###### Sixth", "",
     "| Item | State |", "| --- | --- |", "| Alpha | Done |", "",
+    '<table><tbody><tr><th>Label</th><td colspan="2">Value</td></tr></tbody></table>', "",
     "> A quiet quotation", "", "```ts\nconst value = 1;\n```", "", "---",
   ].join("\n"));
   await convertMarkdownToDocx(input, output);
@@ -203,7 +204,10 @@ test("document design uses editable typography and restrained table formatting",
   assert.equal(fonts.getAttributeNS(W, "ascii"), "Noto Sans");
   assert.equal(fonts.getAttributeNS(W, "hAnsi"), "Noto Sans");
   assert.equal(fonts.getAttributeNS(W, "eastAsia"), "Noto Sans JP");
-  assert.equal(elements(defaults, "color")[0]!.getAttributeNS(W, "val"), "252A31");
+  assert.equal(elements(defaults, "color")[0]!.getAttributeNS(W, "val"), "213247");
+  const spacing = elements(defaults, "spacing")[0]!;
+  assert.equal(spacing.getAttributeNS(W, "after"), "140");
+  assert.equal(spacing.getAttributeNS(W, "line"), "276");
   let previousSize = Infinity;
   for (let level = 1; level <= 6; level++) {
     const id = `Heading${level}`;
@@ -212,7 +216,7 @@ test("document design uses editable typography and restrained table formatting",
     assert.ok(size <= previousSize && size >= 21);
     previousSize = size;
     assert.equal(elements(style, "b").length, 1);
-    assert.equal(elements(style, "color").length, 0, "Headings inherit the document ink color");
+    assert.equal(elements(style, "color")[0]!.getAttributeNS(W, "val"), level === 2 ? "166A73" : "213247");
     assert.equal(elements(style, "i").length, 0);
     assert.equal(elements(style, "pBdr").length, 0);
     const paragraph = elements(document, "p").find((node) => elements(node, "pStyle").some((ref) => ref.getAttributeNS(W, "val") === id))!;
@@ -220,20 +224,40 @@ test("document design uses editable typography and restrained table formatting",
       assert.equal(elements(paragraph, property).length, 0, "Heading typography must stay editable through Word styles");
     }
   }
-  const headers = elements(document, "tc").filter((cell) => ["Item", "State"].includes(cell.textContent ?? ""));
-  assert.equal(headers.length, 2);
+  const titleStyle = elements(styles, "style").find((node) => node.getAttributeNS(W, "styleId") === "Heading1")!;
+  assert.equal(elements(titleStyle, "sz")[0]!.getAttributeNS(W, "val"), "56");
+  const headers = elements(document, "tc").filter((cell) => ["Item", "State", "Label"].includes(cell.textContent ?? ""));
+  assert.equal(headers.length, 3);
   for (const header of headers) {
-    assert.equal(elements(header, "shd")[0]!.getAttributeNS(W, "fill"), "F3F4F5");
+    assert.equal(elements(header, "shd")[0]!.getAttributeNS(W, "fill"), "F3F7F8");
+    assert.equal(elements(header, "color")[0]!.getAttributeNS(W, "val"), "166A73");
     assert.equal(elements(header, "jc")[0]!.getAttributeNS(W, "val"), "left");
   }
-  const borders = elements(document, "tcBorders").flatMap((node) => Array.from(node.childNodes).filter((child): child is Element => child.nodeType === 1));
-  assert.ok(borders.length > 0);
-  for (const border of borders) {
-    assert.equal(border.getAttributeNS(W, "color"), "D5D9DD");
-    assert.ok(Number(border.getAttributeNS(W, "sz")) <= 6);
+  for (const cell of elements(document, "tc")) {
+    const borders = elements(cell, "tcBorders")[0]!;
+    assert.ok(borders);
+    const bottom = elements(borders, "bottom")[0]!;
+    assert.equal(bottom.getAttributeNS(W, "val"), "single");
+    assert.equal(bottom.getAttributeNS(W, "color"), "D9E3E8");
+    assert.equal(bottom.getAttributeNS(W, "sz"), "4");
+    for (const side of ["top", "left", "right"]) {
+      assert.equal(elements(borders, side)[0]!.getAttributeNS(W, "val"), "none");
+    }
+  }
+  const quotation = elements(document, "p").find((node) => node.textContent === "A quiet quotation")!;
+  const quoteBorder = elements(elements(quotation, "pBdr")[0]!, "left")[0]!;
+  assert.equal(quoteBorder.getAttributeNS(W, "color"), "166A73");
+  assert.equal(quoteBorder.getAttributeNS(W, "sz"), "16");
+  const code = elements(document, "p").find((node) => node.textContent === "const value = 1;")!;
+  assert.equal(elements(code, "shd")[0]!.getAttributeNS(W, "fill"), "F3F7F8");
+  const codeBorders = elements(code, "pBdr")[0]!;
+  for (const side of ["top", "bottom", "left", "right"]) {
+    const border = elements(codeBorders, side)[0]!;
+    assert.equal(border.getAttributeNS(W, "color"), "F3F7F8");
+    assert.equal(border.getAttributeNS(W, "space"), ["top", "bottom"].includes(side) ? "10" : "12");
   }
   const hyperlink = elements(styles, "style").find((node) => node.getAttributeNS(W, "styleId") === "Hyperlink")!;
-  assert.equal(elements(hyperlink, "color")[0]!.getAttributeNS(W, "val"), "40566B");
+  assert.equal(elements(hyperlink, "color")[0]!.getAttributeNS(W, "val"), "166A73");
   assert.equal(elements(hyperlink, "u").length, 1);
 }));
 

@@ -16,17 +16,24 @@ const PAGE_HEIGHT = 16838;
 const PAGE_MARGIN = 1440;
 const CONTENT_WIDTH_PX = (PAGE_WIDTH - PAGE_MARGIN * 2) / 15;
 const INSPECTOR_PATH = fileURLToPath(new URL("./images.py", import.meta.url));
+const COLORS = {
+  ink: "213247",
+  accent: "166A73",
+  muted: "5B6C7D",
+  surface: "F3F7F8",
+  line: "D9E3E8",
+};
 
 const STYLESHEET = `
-  code, pre { font-family: Consolas; font-size: 9pt; background-color: #F3F4F5; }
-  pre { padding: 8pt 10pt; margin: 6pt 0 10pt; border: 0.5pt solid #D5D9DD; }
-  blockquote { margin: 8pt 0 8pt 12pt; padding-left: 10pt; border-left: 1.5pt solid #D5D9DD; color: #626B75; }
-  table { width: 100%; margin: 6pt 0 10pt; }
+  code, pre { font-family: Consolas; font-size: 9pt; background-color: #${COLORS.surface}; }
+  pre { padding: 10pt 12pt; margin: 8pt 0 12pt; border: 0.5pt solid #${COLORS.surface}; }
+  blockquote { margin: 10pt 0; padding-left: 12pt; border-left: 2pt solid #${COLORS.accent}; color: #${COLORS.muted}; }
+  table { width: 100%; margin: 6pt 0 12pt; }
   tr { break-inside: avoid; }
-  td, th { padding: 5pt 8pt; border: 0.5pt solid #D5D9DD; }
+  td, th { padding: 6pt 9pt; border-bottom: 0.5pt solid #${COLORS.line}; }
   td p, th p { margin: 0; }
-  th { background-color: #F3F4F5; text-align: left; }
-  hr { border-top: 0.5pt solid #D5D9DD; margin: 12pt 0; }
+  th { background-color: #${COLORS.surface}; color: #${COLORS.accent}; text-align: left; }
+  hr { border-top: 0.5pt solid #${COLORS.line}; margin: 14pt 0; }
   img { max-height: ${(PAGE_HEIGHT - PAGE_MARGIN * 2 - 720) / 15}px; }
   p:has(> img:only-child) { text-align: center; }
 `;
@@ -84,19 +91,19 @@ export async function convertMarkdownToDocx(
     styles: {
       default: {
         document: {
-          run: { font: { ascii: "Noto Sans", hAnsi: "Noto Sans", eastAsia: "Noto Sans JP" }, size: 21, color: "252A31" },
-          paragraph: { spacing: { before: 0, after: 120, line: 264 } },
+          run: { font: { ascii: "Noto Sans", hAnsi: "Noto Sans", eastAsia: "Noto Sans JP" }, size: 21, color: COLORS.ink },
+          paragraph: { spacing: { before: 0, after: 140, line: 276 } },
         },
         ...Object.fromEntries(
-          [[48, 0, 240], [27, 360, 120], [24, 240, 100], [21, 200, 80], [21, 200, 80], [21, 200, 80]].map(([size, before, after], index) => [
+          [[56, 0, 280], [30, 400, 160], [24, 280, 100], [21, 240, 80], [21, 240, 80], [21, 240, 80]].map(([size, before, after], index) => [
             `heading${index + 1}`, {
-              run: { size, bold: true },
+              run: { size, bold: true, color: index === 1 ? COLORS.accent : COLORS.ink },
               paragraph: { keepNext: true, keepLines: true, spacing: { before, after, line: 240 } },
             },
           ]),
         ),
         listParagraph: { paragraph: { spacing: { after: 60 } } },
-        hyperlink: { run: { color: "40566B", underline: { type: UnderlineType.SINGLE } } },
+        hyperlink: { run: { color: COLORS.accent, underline: { type: UnderlineType.SINGLE } } },
       },
     },
     sections: [{
