@@ -188,6 +188,33 @@ test("library-generated DOCX preserves formatting, table headers, lists and lite
   assert.equal(elements(defaults, "rFonts")[0]!.getAttributeNS(W, "eastAsia"), "Yu Gothic UI");
 }));
 
+test("headings keep their lines and next block without changing body pagination", () => withTempDirectory(async (directory) => {
+  const input = path.join(directory, "input.md");
+  const output = path.join(directory, "output.docx");
+  writeFileSync(input, Array.from({ length: 6 }, (_, index) => `${"#".repeat(index + 1)} Heading ${index + 1}\n\nBody ${index + 1}\n`).join("\n"));
+  await convertMarkdownToDocx(input, output);
+  const zip = await JSZip.loadAsync(readFileSync(output));
+  const document = await xmlPart(zip);
+  const styles = await xmlPart(zip, "word/styles.xml");
+  for (let level = 1; level <= 6; level++) {
+    const id = `Heading${level}`;
+    const heading = elements(document, "p").find((node) => node.textContent === `Heading ${level}`);
+    assert.ok(heading);
+    assert.equal(elements(heading, "pStyle")[0]!.getAttributeNS(W, "val"), id);
+    const style = elements(styles, "style").find((node) => node.getAttributeNS(W, "styleId") === id);
+    assert.ok(style);
+    for (const property of ["keepNext", "keepLines"]) {
+      const settings = elements(style, property);
+      assert.equal(settings.length, 1, `${id} must set ${property}`);
+      assert.ok(!["0", "false", "off"].includes(settings[0]!.getAttributeNS(W, "val") ?? ""));
+    }
+  }
+  assert.equal(elements(elements(styles, "docDefaults")[0]!, "keepNext").length, 0);
+  for (const body of elements(document, "p").filter((node) => node.textContent?.startsWith("Body "))) {
+    assert.equal(elements(body, "keepNext").length, 0);
+  }
+}));
+
 test("code appendix bookmarks, links and page breaks survive DOCX generation", () => withTempDirectory(async (directory) => {
   const input = path.join(directory, "input.md");
   const output = path.join(directory, "output.docx");

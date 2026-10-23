@@ -90,6 +90,11 @@ export async function convertMarkdownToDocx(
           run: { font: { ascii: "Segoe UI", hAnsi: "Segoe UI", eastAsia: "Yu Gothic UI" }, size: 21, color: "1F2328" },
           paragraph: { spacing: { line: 312 } },
         },
+        ...Object.fromEntries(
+          ["heading1", "heading2", "heading3", "heading4", "heading5", "heading6"].map((style) => [
+            style, { paragraph: { keepNext: true, keepLines: true } },
+          ]),
+        ),
         listParagraph: { paragraph: { spacing: { after: 40 } } },
       },
     },
