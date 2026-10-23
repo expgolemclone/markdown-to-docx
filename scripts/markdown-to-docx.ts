@@ -26,8 +26,8 @@ const COLORS = {
 
 const STYLESHEET = `
   code, pre { font-family: Consolas; font-size: 9pt; background-color: #${COLORS.surface}; }
-  pre { padding: 10pt 12pt; margin: 8pt 0 12pt; border: 0.5pt solid #${COLORS.surface}; }
-  blockquote { margin: 10pt 0; padding-left: 12pt; border-left: 2pt solid #${COLORS.accent}; color: #${COLORS.muted}; }
+  pre { padding: 10pt 12pt; margin: 8pt 12.5pt 12pt; border: 0.5pt solid #${COLORS.surface}; }
+  blockquote { margin: 10pt 0 10pt 14pt; padding-left: 12pt; border-left: 2pt solid #${COLORS.accent}; color: #${COLORS.muted}; }
   table { width: 100%; margin: 6pt 0 12pt; }
   tr { break-inside: avoid; }
   td, th { padding: 6pt 9pt; border-bottom: 0.5pt solid #${COLORS.line}; }

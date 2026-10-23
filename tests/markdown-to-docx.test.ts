@@ -261,6 +261,37 @@ test("document design uses editable typography, one accent and open tables", () 
   assert.equal(elements(hyperlink, "u").length, 1);
 }));
 
+test("quote and code borders align with the body edges", () => withTempDirectory(async (directory) => {
+  const input = path.join(directory, "input.md");
+  const output = path.join(directory, "output.docx");
+  writeFileSync(input, [
+    "# Alignment", "", "Body with `inline code`.", "",
+    "> Quote first paragraph", ">", "> Quote second paragraph", "",
+    "```ts\nconst first = 1;\nconst second = 2;\n```",
+  ].join("\n"));
+  await convertMarkdownToDocx(input, output);
+  const document = await xmlPart(await JSZip.loadAsync(readFileSync(output)));
+  const paragraphs = elements(document, "p");
+  const framed = paragraphs.filter((paragraph) => elements(paragraph, "pBdr").length > 0);
+  assert.equal(framed.length, 3);
+  for (const paragraph of framed) {
+    const borders = elements(paragraph, "pBdr")[0]!;
+    const indent = elements(paragraph, "ind")[0];
+    assert.ok(indent, "Bordered paragraphs need an explicit text inset");
+    for (const side of ["left", "right"]) {
+      const border = elements(borders, side)[0];
+      if (!border) continue;
+      const inset = Number(border.getAttributeNS(W, "space")) * 20 + Number(border.getAttributeNS(W, "sz")) * 20 / 8;
+      assert.equal(Number(indent.getAttributeNS(W, side)), inset, `${side} border must not hang outside the body edge`);
+    }
+  }
+  for (const text of ["Alignment", "Body with inline code."]) {
+    const paragraph = paragraphs.find((node) => node.textContent === text)!;
+    assert.equal(elements(paragraph, "ind").length, 0);
+    assert.equal(elements(paragraph, "pBdr").length, 0);
+  }
+}));
+
 test("headings keep their lines and next block without changing body pagination", () => withTempDirectory(async (directory) => {
   const input = path.join(directory, "input.md");
   const output = path.join(directory, "output.docx");
