@@ -20,14 +20,14 @@
     - [ ] Third-level open task
 
 3. Ordered item starting at three
-  1. Second-level ordered item
-    1. Third-level ordered item
-      1. Fourth-level ordered item
-        1. Fifth-level ordered item at the body size
-          1. Sixth-level ordered item
-            1. Seventh-level ordered item
-              1. Eighth-level ordered item
-                1. Ninth-level ordered item
+    1. Second-level ordered item
+        1. Third-level ordered item
+            1. Fourth-level ordered item
+                1. Fifth-level ordered item at the body size
+                    1. Sixth-level ordered item
+                        1. Seventh-level ordered item
+                            1. Eighth-level ordered item
+                                1. Ninth-level ordered item
 4. Ordered item with another wrapped sentence for list alignment verification.
 
 - First parent with a nested list starting at three
@@ -64,7 +64,7 @@ Literal code must retain backslashes: `a\*b`, `C:\temp\file`, and ``a`b\*c``.
     <tr><th colspan="2">Work summary</th><th>Status</th></tr>
   </thead>
   <tbody>
-    <tr><td rowspan="2">Area A</td><td>Task 1 with **bold text**</td><td>Done</td></tr>
+    <tr><td rowspan="2">Area A</td><td>Task 1 with <strong>bold text</strong></td><td>Done</td></tr>
     <tr><td>Task 2 with literal **markers**<br>Second line</td><td align="center">Open</td></tr>
     <tr><td>Area B</td><td colspan="2">One cell spanning two columns</td></tr>
   </tbody>

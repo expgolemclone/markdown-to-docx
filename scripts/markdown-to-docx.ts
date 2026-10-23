@@ -1,185 +1,119 @@
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  rmdirSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { pathToFileURL } from "node:url";
+import { Document, Packer } from "docx";
+import { htmlToContent } from "docx/html";
 
-import { renderDocx } from "./docx-renderer.ts";
-import {
-  planDocxImageSynchronization,
-  type PlannedImageFile,
-} from "./docx-image-sync.ts";
-import { parseMarkdown } from "./markdown-parser.ts";
+import { resolveMarkdownImagePath } from "./image-path.ts";
+import { markdownToHtml } from "./markdown-to-html.ts";
+import { pythonExecutable } from "./python.ts";
 
-export type SynchronizationOptions = {
-  codeAppendixThreshold?: number;
-};
+const PAGE_WIDTH = 11906;
+const PAGE_HEIGHT = 16838;
+const PAGE_MARGIN = 1440;
+const CONTENT_WIDTH_PX = (PAGE_WIDTH - PAGE_MARGIN * 2) / 15;
+const INSPECTOR_PATH = fileURLToPath(new URL("./images.py", import.meta.url));
 
-export type SynchronizationResult = {
-  importedImagePaths: string[];
-  markdownChanged: boolean;
-};
+const STYLESHEET = `
+  p { margin: 0 0 4pt; }
+  h1 { font-size: 20pt; color: #1F2328; border-bottom: 1px solid #0969DA; }
+  h2 { font-size: 16pt; color: #0969DA; border-bottom: 1px solid #D1D9E0; }
+  h3 { font-size: 13pt; }
+  h4, h5, h6 { font-size: 11.5pt; }
+  code, pre { font-family: Consolas; font-size: 9.5pt; background-color: #F6F8FA; }
+  pre { padding: 6pt; border-left: 3px solid #0969DA; }
+  blockquote { margin-left: 13pt; padding-left: 8pt; border-left: 3px solid #D1D9E0; color: #656D76; }
+  table { width: 100%; }
+  tr { break-inside: avoid; }
+  td, th { padding: 4pt 6pt; }
+  th { background-color: #EAF2FB; }
+  img { max-height: ${(PAGE_HEIGHT - PAGE_MARGIN * 2 - 720) / 15}px; }
+  p:has(> img:only-child) { text-align: center; }
+`;
 
-function validatePathExtensions(inputPath: string, outputPath: string): void {
-  const inputExtension = path.extname(inputPath).toLowerCase();
-  if (inputExtension !== ".md" && inputExtension !== ".markdown") {
-    throw new Error(`Markdown input must use the .md or .markdown extension: ${inputPath}`);
-  }
-  if (path.extname(outputPath).toLowerCase() !== ".docx") {
-    throw new Error(`DOCX output must use the .docx extension: ${outputPath}`);
-  }
-}
-
-function temporarySibling(targetPath: string): string {
-  return path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${randomUUID()}.tmp`);
-}
-
-function stageFile(targetPath: string, data: string | Buffer): string {
-  const temporaryPath = temporarySibling(targetPath);
-  writeFileSync(temporaryPath, data, { flag: "wx" });
-  return temporaryPath;
-}
-
-function removeCreatedImages(files: string[], imageDirectory?: string): void {
-  for (const file of files) rmSync(file, { force: true });
-  if (imageDirectory && existsSync(imageDirectory) && readdirSync(imageDirectory).length === 0) {
-    rmdirSync(imageDirectory);
-  }
-}
-
-function materializeImages(files: PlannedImageFile[]): {
-  createdFiles: string[];
-  createdDirectory?: string;
-} {
-  if (files.length === 0) return { createdFiles: [] };
-  const imageDirectory = path.dirname(files[0]!.absolutePath);
-  if (files.some((file) => path.dirname(file.absolutePath) !== imageDirectory)) {
-    throw new Error("Synchronized DOCX images must use one Markdown image directory.");
-  }
-  let createdDirectory: string | undefined;
-  if (!existsSync(imageDirectory)) {
-    mkdirSync(imageDirectory);
-    createdDirectory = imageDirectory;
-  } else if (!statSync(imageDirectory).isDirectory()) {
-    throw new Error(`Markdown image directory path is not a directory: ${imageDirectory}`);
-  }
-  const createdFiles: string[] = [];
-  try {
-    for (const file of files) {
-      writeFileSync(file.absolutePath, file.data, { flag: "wx" });
-      createdFiles.push(file.absolutePath);
-    }
-    return { createdFiles, createdDirectory };
-  } catch (error) {
-    removeCreatedImages(createdFiles, createdDirectory);
-    throw error;
-  }
-}
-
-function restoreMarkdown(inputPath: string, originalMarkdown: Buffer): void {
-  const temporaryPath = stageFile(inputPath, originalMarkdown);
-  try {
-    renameSync(temporaryPath, inputPath);
-  } finally {
-    rmSync(temporaryPath, { force: true });
-  }
-}
-
-export function synchronizeMarkdownToDocx(
+export async function convertMarkdownToDocx(
   inputPath: string,
   outputPath: string,
-  options: SynchronizationOptions = {},
-): SynchronizationResult {
-  const resolvedInput = path.resolve(inputPath);
-  const resolvedOutput = path.resolve(outputPath);
-  validatePathExtensions(resolvedInput, resolvedOutput);
-  if (!existsSync(resolvedInput) || !statSync(resolvedInput).isFile()) {
-    throw new Error(`Markdown input does not exist or is not a file: ${resolvedInput}`);
+  options: { codeAppendixThreshold?: number } = {},
+): Promise<void> {
+  const input = path.resolve(inputPath);
+  const output = path.resolve(outputPath);
+  if (![".md", ".markdown"].includes(path.extname(input).toLowerCase())) {
+    throw new Error(`Markdown input must use the .md or .markdown extension: ${input}`);
   }
-  const outputDirectory = path.dirname(resolvedOutput);
+  if (path.extname(output).toLowerCase() !== ".docx") {
+    throw new Error(`DOCX output must use the .docx extension: ${output}`);
+  }
+  if (!existsSync(input) || !statSync(input).isFile()) {
+    throw new Error(`Markdown input does not exist or is not a file: ${input}`);
+  }
+  const outputDirectory = path.dirname(output);
   if (!existsSync(outputDirectory) || !statSync(outputDirectory).isDirectory()) {
     throw new Error(`DOCX output directory does not exist: ${outputDirectory}`);
   }
-  if (existsSync(resolvedOutput) && !statSync(resolvedOutput).isFile()) {
-    throw new Error(`DOCX output path is not a file: ${resolvedOutput}`);
-  }
-  if (
-    options.codeAppendixThreshold !== undefined &&
-    (!Number.isSafeInteger(options.codeAppendixThreshold) || options.codeAppendixThreshold < 1)
-  ) {
-    throw new RangeError("The code appendix threshold must be a positive integer.");
+  if (existsSync(output) && !statSync(output).isFile()) {
+    throw new Error(`DOCX output path is not a file: ${output}`);
   }
 
-  const originalMarkdown = readFileSync(resolvedInput);
-  const markdown = originalMarkdown.toString("utf8");
-  const synchronization = existsSync(resolvedOutput)
-    ? planDocxImageSynchronization(markdown, resolvedInput, resolvedOutput)
-    : { markdown, importedImagePaths: [], imageFiles: [] };
-  const markdownChanged = synchronization.markdown !== markdown;
-  const materialized = materializeImages(synchronization.imageFiles);
-  let markdownTemporaryPath: string | undefined;
-  let outputTemporaryPath: string | undefined;
-  let markdownCommitted = false;
-  try {
-    const blocks = parseMarkdown(synchronization.markdown, options);
-    const output = renderDocx(blocks, path.dirname(resolvedInput));
-    if (markdownChanged) markdownTemporaryPath = stageFile(resolvedInput, synchronization.markdown);
-    outputTemporaryPath = stageFile(resolvedOutput, output);
-    if (markdownTemporaryPath) {
-      renameSync(markdownTemporaryPath, resolvedInput);
-      markdownTemporaryPath = undefined;
-      markdownCommitted = true;
-    }
-    renameSync(outputTemporaryPath, resolvedOutput);
-    outputTemporaryPath = undefined;
-  } catch (error) {
-    let rollbackError: unknown;
-    if (markdownCommitted) {
-      try {
-        restoreMarkdown(resolvedInput, originalMarkdown);
-      } catch (caught) {
-        rollbackError = caught;
+  const markdown = new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(input));
+  const html = markdownToHtml(markdown, options.codeAppendixThreshold);
+  const images = new Map<string, Buffer>();
+  const children = htmlToContent(html, {
+    stylesheet: STYLESHEET,
+    maxImageWidth: CONTENT_WIDTH_PX,
+    images(source) {
+      const imagePath = resolveMarkdownImagePath(decodeURIComponent(source), path.dirname(input));
+      const cached = images.get(imagePath);
+      if (cached) return cached;
+      const data = readFileSync(imagePath);
+      const inspected = spawnSync(pythonExecutable, [INSPECTOR_PATH, "inspect"], {
+        input: data, encoding: "utf8", timeout: 120_000, maxBuffer: 1024 * 1024, windowsHide: true,
+      });
+      if (inspected.error) throw new Error(`Unable to validate PNG ${imagePath}: ${inspected.error.message}`);
+      if (inspected.status !== 0 || inspected.stderr.trim() !== "") {
+        throw new Error(`Unable to validate PNG ${imagePath}: ${inspected.stderr.trim()}`);
       }
-    }
-    removeCreatedImages(materialized.createdFiles, materialized.createdDirectory);
-    if (rollbackError) {
-      throw new AggregateError(
-        [error, rollbackError],
-        "DOCX conversion failed and the original Markdown could not be restored.",
-      );
-    }
-    throw error;
+      images.set(imagePath, data);
+      return data;
+    },
+    onWarning(warning) {
+      throw new Error(`DOCX conversion would lose content (${warning.code}): ${warning.message}`);
+    },
+  });
+  const document = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: { ascii: "Segoe UI", hAnsi: "Segoe UI", eastAsia: "Yu Gothic UI" }, size: 21, color: "1F2328" },
+          paragraph: { spacing: { line: 312 } },
+        },
+        listParagraph: { paragraph: { spacing: { after: 40 } } },
+      },
+    },
+    sections: [{
+      properties: {
+        page: {
+          size: { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+          margin: { top: PAGE_MARGIN, right: PAGE_MARGIN, bottom: PAGE_MARGIN, left: PAGE_MARGIN },
+        },
+      },
+      children,
+    }],
+  });
+  const data = await Packer.toBuffer(document);
+  const temporary = path.join(outputDirectory, `.${path.basename(output)}.${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, data, { flag: "wx" });
+    renameSync(temporary, output);
   } finally {
-    if (markdownTemporaryPath) rmSync(markdownTemporaryPath, { force: true });
-    if (outputTemporaryPath) rmSync(outputTemporaryPath, { force: true });
+    rmSync(temporary, { force: true });
   }
-  return { importedImagePaths: synchronization.importedImagePaths, markdownChanged };
 }
 
-export function usage(): string {
-  return [
-    "Usage:",
-    "  node scripts/markdown-to-docx.ts <input.md> <output.docx> [--code-appendix-threshold N]",
-    "",
-    "An existing output DOCX is inspected first and missing body images are synchronized into Markdown.",
-    "",
-    "Options:",
-    "  --code-appendix-threshold N  Move fenced code blocks longer than N lines to Appendix.",
-    "  --help                       Show this help.",
-  ].join("\n");
-}
-
-export function runCli(argv: string[]): void {
+export async function runCli(argv: string[]): Promise<void> {
   const parsed = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -190,39 +124,25 @@ export function runCli(argv: string[]): void {
     },
   });
   if (parsed.values.help) {
-    console.log(usage());
+    console.log("Usage: node scripts/markdown-to-docx.ts <input.md> <output.docx> [--code-appendix-threshold N]");
     return;
   }
   if (parsed.positionals.length !== 2) {
-    throw new Error(`${usage()}\n\nExactly one input path and one output path are required.`);
+    throw new Error("Exactly one input path and one output path are required. Use --help for usage.");
   }
-
-  const rawThreshold = parsed.values["code-appendix-threshold"];
-  let codeAppendixThreshold: number | undefined;
-  if (rawThreshold !== undefined) {
-    if (!/^\d+$/.test(rawThreshold)) {
-      throw new RangeError("--code-appendix-threshold must be a positive integer.");
-    }
-    codeAppendixThreshold = Number.parseInt(rawThreshold, 10);
-    if (!Number.isSafeInteger(codeAppendixThreshold) || codeAppendixThreshold < 1) {
-      throw new RangeError("--code-appendix-threshold must be a positive integer.");
-    }
+  const threshold = parsed.values["code-appendix-threshold"];
+  if (threshold !== undefined && !/^\d+$/.test(threshold)) {
+    throw new RangeError("--code-appendix-threshold must be a positive integer.");
   }
-  const result = synchronizeMarkdownToDocx(parsed.positionals[0]!, parsed.positionals[1]!, {
-    codeAppendixThreshold,
+  await convertMarkdownToDocx(parsed.positionals[0]!, parsed.positionals[1]!, {
+    codeAppendixThreshold: threshold === undefined ? undefined : Number(threshold),
   });
-  if (result.importedImagePaths.length > 0) {
-    console.log(
-      `Synchronized ${result.importedImagePaths.length} DOCX image(s) into ${path.resolve(parsed.positionals[0]!)}`,
-    );
-  }
   console.log(`Converted: ${path.resolve(parsed.positionals[0]!)} -> ${path.resolve(parsed.positionals[1]!)}`);
 }
 
-const entryPoint = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : "";
-if (entryPoint === import.meta.url) {
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
   try {
-    runCli(process.argv.slice(2));
+    await runCli(process.argv.slice(2));
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

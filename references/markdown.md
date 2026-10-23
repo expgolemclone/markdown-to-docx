@@ -15,7 +15,7 @@ Keep images as local PNGs referenced relative to the Markdown file or by absolut
 Set column widths and express merged regions with `rowspan` and `colspan`:
 
 ```html
-<table style="break-inside:avoid">
+<table>
   <colgroup><col width="120"><col width="260"><col width="100"></colgroup>
   <thead><tr><th colspan="2">Summary</th><th>Status</th></tr></thead>
   <tbody>
@@ -30,10 +30,10 @@ Set column widths and express merged regions with `rowspan` and `colspan`:
 Keep the title and date above the personal-information table. Put the portrait in its top-right body cell, spanning the short identity/address rows. Let long contact values span the remaining columns.
 
 ```html
-<table style="break-inside:avoid">
+<table>
   <colgroup><col width="120"><col width="280"><col width="120"></colgroup>
   <tbody>
-    <tr><th>Name</th><td>Sample Person</td><td rowspan="2" valign="top"><img src="images/portrait.png" alt="Portrait" style="width:30mm;height:40mm"></td></tr>
+    <tr><th>Name</th><td>Sample Person</td><td rowspan="2" valign="top"><img src="images/portrait.png" alt="Portrait" style="width:30mm;max-height:40mm"></td></tr>
     <tr><th>Address</th><td>Sample address</td></tr>
     <tr><th>Email</th><td colspan="2">sample@example.test</td></tr>
   </tbody>
@@ -42,7 +42,7 @@ Keep the title and date above the personal-information table. Put the portrait i
 
 Use `tbody` for a first-page-only photo. Move an existing standalone portrait into the cell instead of retaining both occurrences. Leave room for cell padding and check source resolution for the requested print size; do not generate, stretch, or retouch the portrait.
 
-When intentionally restructuring or removing a photo table from an existing DOCX, choose a new output DOCX path. Do not bypass an ambiguous image-import error or guess where an image belongs.
+Edits and deletions belong in Markdown; regenerate the same DOCX path. Use standard HTML inside HTML tables, including `<strong>` for emphasis.
 
 ## Verification
 
