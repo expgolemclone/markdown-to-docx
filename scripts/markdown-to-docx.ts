@@ -4,7 +4,7 @@ import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync }
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { Document, Packer } from "docx";
+import { Document, Packer, UnderlineType } from "docx";
 import { htmlToContent } from "docx/html";
 
 import { resolveMarkdownImagePath } from "./image-path.ts";
@@ -18,18 +18,15 @@ const CONTENT_WIDTH_PX = (PAGE_WIDTH - PAGE_MARGIN * 2) / 15;
 const INSPECTOR_PATH = fileURLToPath(new URL("./images.py", import.meta.url));
 
 const STYLESHEET = `
-  p { margin: 0 0 4pt; }
-  h1 { font-size: 20pt; color: #1F2328; border-bottom: 1px solid #0969DA; }
-  h2 { font-size: 16pt; color: #0969DA; border-bottom: 1px solid #D1D9E0; }
-  h3 { font-size: 13pt; }
-  h4, h5, h6 { font-size: 11.5pt; }
-  code, pre { font-family: Consolas; font-size: 9.5pt; background-color: #F6F8FA; }
-  pre { padding: 6pt; border-left: 3px solid #0969DA; }
-  blockquote { margin-left: 13pt; padding-left: 8pt; border-left: 3px solid #D1D9E0; color: #656D76; }
-  table { width: 100%; }
+  code, pre { font-family: Consolas; font-size: 9pt; background-color: #F3F4F5; }
+  pre { padding: 8pt 10pt; margin: 6pt 0 10pt; border: 0.5pt solid #D5D9DD; }
+  blockquote { margin: 8pt 0 8pt 12pt; padding-left: 10pt; border-left: 1.5pt solid #D5D9DD; color: #626B75; }
+  table { width: 100%; margin: 6pt 0 10pt; }
   tr { break-inside: avoid; }
-  td, th { padding: 4pt 6pt; }
-  th { background-color: #EAF2FB; }
+  td, th { padding: 5pt 8pt; border: 0.5pt solid #D5D9DD; }
+  td p, th p { margin: 0; }
+  th { background-color: #F3F4F5; text-align: left; }
+  hr { border-top: 0.5pt solid #D5D9DD; margin: 12pt 0; }
   img { max-height: ${(PAGE_HEIGHT - PAGE_MARGIN * 2 - 720) / 15}px; }
   p:has(> img:only-child) { text-align: center; }
 `;
@@ -87,15 +84,19 @@ export async function convertMarkdownToDocx(
     styles: {
       default: {
         document: {
-          run: { font: { ascii: "Segoe UI", hAnsi: "Segoe UI", eastAsia: "Yu Gothic UI" }, size: 21, color: "1F2328" },
-          paragraph: { spacing: { line: 312 } },
+          run: { font: { ascii: "Noto Sans", hAnsi: "Noto Sans", eastAsia: "Noto Sans JP" }, size: 21, color: "252A31" },
+          paragraph: { spacing: { before: 0, after: 120, line: 264 } },
         },
         ...Object.fromEntries(
-          ["heading1", "heading2", "heading3", "heading4", "heading5", "heading6"].map((style) => [
-            style, { paragraph: { keepNext: true, keepLines: true } },
+          [[48, 0, 240], [27, 360, 120], [24, 240, 100], [21, 200, 80], [21, 200, 80], [21, 200, 80]].map(([size, before, after], index) => [
+            `heading${index + 1}`, {
+              run: { size, bold: true },
+              paragraph: { keepNext: true, keepLines: true, spacing: { before, after, line: 240 } },
+            },
           ]),
         ),
-        listParagraph: { paragraph: { spacing: { after: 40 } } },
+        listParagraph: { paragraph: { spacing: { after: 60 } } },
+        hyperlink: { run: { color: "40566B", underline: { type: UnderlineType.SINGLE } } },
       },
     },
     sections: [{

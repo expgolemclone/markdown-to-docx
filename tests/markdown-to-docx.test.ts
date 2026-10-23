@@ -182,10 +182,59 @@ test("library-generated DOCX preserves formatting, table headers, lists and lite
   assert.deepEqual(listParagraphs.map((node) => elements(node, "ilvl")[0]!.getAttributeNS(W, "val")), ["0", "0", "1", "2"]);
   const numbering = await xmlPart(zip, "word/numbering.xml");
   assert.ok(elements(numbering, "start").some((node) => node.getAttributeNS(W, "val") === "3"));
+}));
+
+test("document design uses editable typography and restrained table formatting", () => withTempDirectory(async (directory) => {
+  const input = path.join(directory, "input.md");
+  const output = path.join(directory, "output.docx");
+  writeFileSync(input, [
+    "# 文書タイトル", "", "通常の日本語と English, **強調** と [link](https://example.test).", "",
+    "## Section", "", "### Detail", "", "#### Fourth", "", "##### Fifth", "", "###### Sixth", "",
+    "| Item | State |", "| --- | --- |", "| Alpha | Done |", "",
+    "> A quiet quotation", "", "```ts\nconst value = 1;\n```", "", "---",
+  ].join("\n"));
+  await convertMarkdownToDocx(input, output);
+  const zip = await JSZip.loadAsync(readFileSync(output));
+  const document = await xmlPart(zip);
   const styles = await xmlPart(zip, "word/styles.xml");
   const defaults = elements(styles, "docDefaults")[0]!;
+  const fonts = elements(defaults, "rFonts")[0]!;
   assert.equal(elements(defaults, "sz")[0]!.getAttributeNS(W, "val"), "21");
-  assert.equal(elements(defaults, "rFonts")[0]!.getAttributeNS(W, "eastAsia"), "Yu Gothic UI");
+  assert.equal(fonts.getAttributeNS(W, "ascii"), "Noto Sans");
+  assert.equal(fonts.getAttributeNS(W, "hAnsi"), "Noto Sans");
+  assert.equal(fonts.getAttributeNS(W, "eastAsia"), "Noto Sans JP");
+  assert.equal(elements(defaults, "color")[0]!.getAttributeNS(W, "val"), "252A31");
+  let previousSize = Infinity;
+  for (let level = 1; level <= 6; level++) {
+    const id = `Heading${level}`;
+    const style = elements(styles, "style").find((node) => node.getAttributeNS(W, "styleId") === id)!;
+    const size = Number(elements(style, "sz")[0]!.getAttributeNS(W, "val"));
+    assert.ok(size <= previousSize && size >= 21);
+    previousSize = size;
+    assert.equal(elements(style, "b").length, 1);
+    assert.equal(elements(style, "color").length, 0, "Headings inherit the document ink color");
+    assert.equal(elements(style, "i").length, 0);
+    assert.equal(elements(style, "pBdr").length, 0);
+    const paragraph = elements(document, "p").find((node) => elements(node, "pStyle").some((ref) => ref.getAttributeNS(W, "val") === id))!;
+    for (const property of ["sz", "color", "rFonts", "pBdr"]) {
+      assert.equal(elements(paragraph, property).length, 0, "Heading typography must stay editable through Word styles");
+    }
+  }
+  const headers = elements(document, "tc").filter((cell) => ["Item", "State"].includes(cell.textContent ?? ""));
+  assert.equal(headers.length, 2);
+  for (const header of headers) {
+    assert.equal(elements(header, "shd")[0]!.getAttributeNS(W, "fill"), "F3F4F5");
+    assert.equal(elements(header, "jc")[0]!.getAttributeNS(W, "val"), "left");
+  }
+  const borders = elements(document, "tcBorders").flatMap((node) => Array.from(node.childNodes).filter((child): child is Element => child.nodeType === 1));
+  assert.ok(borders.length > 0);
+  for (const border of borders) {
+    assert.equal(border.getAttributeNS(W, "color"), "D5D9DD");
+    assert.ok(Number(border.getAttributeNS(W, "sz")) <= 6);
+  }
+  const hyperlink = elements(styles, "style").find((node) => node.getAttributeNS(W, "styleId") === "Hyperlink")!;
+  assert.equal(elements(hyperlink, "color")[0]!.getAttributeNS(W, "val"), "40566B");
+  assert.equal(elements(hyperlink, "u").length, 1);
 }));
 
 test("headings keep their lines and next block without changing body pagination", () => withTempDirectory(async (directory) => {
